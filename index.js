@@ -8,7 +8,7 @@ var cors = require('cors')
 const app = express()
 const port = process.env.SERVER_PORT
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = process.env.MONGODB_URI
 
 
@@ -36,6 +36,9 @@ async function run() {
         const database = client.db("hireloop-db");
         const jobCollection = database.collection("jobs");
         const companyCollection = database.collection("companies");
+        const applicationsCollection = database.collection("applications");
+        const planCollection = database.collection('plans');
+        const subscriptionCollection = database.collection('subscriptions');
 
         // geting user data using api(not importent)
         const userCollection = database.collection("user")
@@ -45,10 +48,17 @@ async function run() {
             res.send(result);
         })
 
-        app.post('/api/jobs', async (req, res) => {
-            const job = req.body
-            const result = await jobCollection.insertOne(job)
-            res.json(result)
+        app.get('/api/jobs', async (req, res) => {
+            const query = {};
+            if (req.query.companyId) {
+                query.companyId = req.query.companyId;
+            }
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
+            const cursor = jobCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
         })
 
         app.get('/api/jobs/:id', async (req, res) => {
@@ -60,18 +70,38 @@ async function run() {
             res.send(result);
         })
 
-        app.get('/api/jobs', async (req, res) => {
-            const query = {}
-            if (req.query.companyId) {
-                query.companyId = req.query.companyId
+        app.post('/api/jobs', async (req, res) => {
+            const job = req.body;
+            const newJob = {
+                ...job,
+                createdAt: new Date()
             }
+            const result = await jobCollection.insertOne(newJob);
+            res.send(result);
+        })
 
-            if (req.query.status) {
-                query.status = req.query.status
+        // application related apis
+        app.get('/api/applications', async (req, res) => {
+            const query = {};
+            if (req.query.applicantId) {
+                query.applicantId = req.query.applicantId;
             }
-            const cursor = jobCollection.find(query)
-            const result = await cursor.toArray()
-            res.json(result)
+            if (req.query.jobId) {
+                query.jobId = req.query.jobId;
+            }
+            const cursor = applicationsCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
+        })
+
+        app.post('/api/applications', async (req, res) => {
+            const application = req.body;
+            const newApplication = {
+                ...application,
+                createdAt: new Date()
+            }
+            const result = await applicationsCollection.insertOne(newApplication);
+            res.send(result);
         })
 
         // company related apis
@@ -99,6 +129,41 @@ async function run() {
             const result = await companyCollection.insertOne(newCompany);
             res.send(result);
         })
+
+        // plans 
+        app.get('/api/plans', async (req, res) => {
+            const query = {}
+            if (req.query.plan_id) {
+                query.id = req.query.plan_id
+            }
+            const plan = await planCollection.findOne(query);
+            res.send(plan)
+        })
+
+        // subscription 
+        app.post('/api/subscriptions', async (req, res) => {
+            const data = req.body;
+            const subsInfo = {
+                ...data,
+                createdAt: new Date()
+            }
+
+            const result = await subscriptionCollection.insertOne(subsInfo);
+
+            // update the user plan information
+            const filter = { email: data.email };
+            // update the value of the 'quantity' field to 5
+            const updateDocument = {
+                $set: {
+                    plan: data.planId,
+                },
+            };
+
+            const updateResult = await usersCollection.updateOne(filter, updateDocument);
+            res.send(updateResult)
+        })
+
+
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
