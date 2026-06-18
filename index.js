@@ -159,7 +159,7 @@ async function run() {
                 },
             };
 
-            const updateResult = await usersCollection.updateOne(filter, updateDocument);
+            const updateResult = await userCollection.updateOne(filter, updateDocument);
             res.send(updateResult)
         })
 
