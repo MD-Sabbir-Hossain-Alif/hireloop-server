@@ -19,6 +19,12 @@ app.get('/', (req, res) => {
     res.send('Hello World!')
 })
 
+// logger
+const logger = (req, res, next) => {
+    console.log('logger middleware logged', req.params);
+    next();
+}
+
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
     serverApi: {
@@ -39,6 +45,7 @@ async function run() {
         const applicationsCollection = database.collection("applications");
         const planCollection = database.collection('plans');
         const subscriptionCollection = database.collection('subscriptions');
+        const sessionCollection = database.collection('session');
 
         // geting user data using api(not importent)
         const userCollection = database.collection("user")
@@ -47,6 +54,33 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         })
+
+        const verifyToken = async (req, res, next) => {
+            // console.log("headers", req.headers)
+            const authHeader = req.headers?.authorization
+
+            if (!authHeader) {
+                return res.status(401).send({ message: "unauthorized access" })
+            }
+
+            const token = authHeader.split(" ")[1]
+
+            if (!token) {
+                return res.status(401).send({ message: "unauthorized access" })
+            }
+
+            const query = { token: token }
+            const session = await sessionCollection.findOne(query)
+            // console.log("query", query)
+            // console.log("session", session)
+
+            const userId = session.userId
+            console.log("user Id", userId)
+            const user = await userCollection.findOne({ _id: userId })
+            console.log("user", user)
+
+            next()
+        }
 
         app.get('/api/jobs', async (req, res) => {
             const query = {};
@@ -104,9 +138,68 @@ async function run() {
             res.send(result);
         })
 
-        // company related apis
-        app.get('/api/companies', async (req, res) => {
-            const cursor = companyCollection.find().skip(4);
+        //* company related apis
+
+        // app.get('/api/companies', async (req, res) => {
+        //     const cursor = companyCollection.find().skip(4);
+        //     const result = await cursor.toArray();
+        //     res.send(result);
+        // })
+
+        // inefficient way to join/aggregate collection
+        app.get('/api/companies', verifyToken, async (req, res) => {
+            const cursor = companyCollection.find();
+            const companies = await cursor.toArray();
+
+            for (const company of companies) {
+                const filter = {
+                    companyId: company._id.toString()
+                }
+                const jobCount = await jobCollection.countDocuments(filter)
+                company.jobCount = jobCount
+            }
+
+            res.send(companies);
+        })
+        // efficient way to join/aggregate collection using pipeline
+        app.get('/api/companies2', async (req, res) => {
+            const pipeline = [
+                {
+                    $skip: 5
+                },
+                {
+                    $limit: 2
+                }
+            ];
+
+            const cursor = companyCollection.aggregate(pipeline);
+            const result = await cursor.toArray();
+            res.send(result)
+        })
+
+        app.get('/api/stats', async (req, res) => {
+            const pipeline = [
+                {
+                    $group: {
+                        _id: '$jobType',
+                        count: {
+                            $sum: 1
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        jobType: '$_id',
+                        _id: 0,
+                        count: 1
+                    }
+                },
+                {
+                    $sort: { count: 1 }
+                }
+            ]
+
+            const cursor = jobCollection.aggregate(pipeline);
             const result = await cursor.toArray();
             res.send(result);
         })
@@ -127,6 +220,19 @@ async function run() {
                 createdAt: new Date()
             }
             const result = await companyCollection.insertOne(newCompany);
+            res.send(result);
+        })
+
+        app.patch('/api/companies/:id', logger, verifyToken, async (req, res) => {
+            const id = req.params.id;
+            const updatedCompany = req.body;
+            const filter = { _id: new ObjectId(id) }
+            const updatedDoc = {
+                $set: {
+                    status: updatedCompany.status
+                }
+            }
+            const result = await companyCollection.updateOne(filter, updatedDoc);
             res.send(result);
         })
 
