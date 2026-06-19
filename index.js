@@ -71,16 +71,63 @@ async function run() {
 
             const query = { token: token }
             const session = await sessionCollection.findOne(query)
+
+            if (!session) {
+                return res.status(401).send({ message: "unauthorized access" })
+            }
             // console.log("query", query)
             // console.log("session", session)
 
             const userId = session.userId
-            console.log("user Id", userId)
+            // console.log("user Id", userId)
             const user = await userCollection.findOne({ _id: userId })
-            console.log("user", user)
 
+            if (!user) {
+                return res.status(401).send({ message: "unauthorized access" })
+            }
+
+            // console.log("user", user)
+            req.user = user
             next()
         }
+
+        //* must be used after verifyToken middleware
+        // const verifySeeker = async (req, res, next) => {
+        //     if (req.user?.role !== 'seeker') {
+        //         return res.status(403).send({ message: 'forbidden access' })
+        //     }
+        //     next();
+        // }
+
+        //* must be used after verifyToken middleware
+        // const verifyRecruiter = async (req, res, next) => {
+        //     if (req.user?.role !== 'recruiter') {
+        //         return res.status(403).send({ message: 'forbidden access' })
+        //     }
+        //     next();
+        // }
+
+        //* must be used after verifyToken middleware
+        // const verifyAdmin = async (req, res, next) => {
+        //     if (req.user.role !== 'admin') {
+        //         return res.status(403).send({ message: 'forbidden access' })
+        //     }
+        //     next();
+        // }
+
+        //todo: must be used after verifyToken middleware
+        const verifyRole = (role) => {
+            return async (req, res, next) => {
+                if (req.user?.role !== role) {
+                    return res.status(403).send({
+                        message: 'forbidden access'
+                    });
+                }
+
+                next();
+            };
+        };
+
 
         app.get('/api/jobs', async (req, res) => {
             const query = {};
@@ -101,6 +148,7 @@ async function run() {
                 _id: new ObjectId(id)
             }
             const result = await jobCollection.findOne(query);
+            console.log("job founded", result)
             res.send(result);
         })
 
@@ -115,10 +163,17 @@ async function run() {
         })
 
         // application related apis
-        app.get('/api/applications', async (req, res) => {
+        app.get('/api/applications', verifyToken, verifyRole('seeker'), async (req, res) => {
             const query = {};
             if (req.query.applicantId) {
                 query.applicantId = req.query.applicantId;
+
+                // check whether asking for user information or someone else
+                // console.log(req.user, req.query.applicantId)
+
+                if (req.user._id.toString() !== req.query.applicantId) {
+                    res.status(403).send({ message: "forbidden access" })
+                }
             }
             if (req.query.jobId) {
                 query.jobId = req.query.jobId;
@@ -139,7 +194,6 @@ async function run() {
         })
 
         //* company related apis
-
         // app.get('/api/companies', async (req, res) => {
         //     const cursor = companyCollection.find().skip(4);
         //     const result = await cursor.toArray();
@@ -147,7 +201,7 @@ async function run() {
         // })
 
         // inefficient way to join/aggregate collection
-        app.get('/api/companies', verifyToken, async (req, res) => {
+        app.get('/api/companies', verifyToken, verifyRole('admin'), async (req, res) => {
             const cursor = companyCollection.find();
             const companies = await cursor.toArray();
 
